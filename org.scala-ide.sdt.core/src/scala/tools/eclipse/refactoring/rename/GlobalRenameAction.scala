@@ -32,18 +32,19 @@ class GlobalRenameAction extends RefactoringAction {
   /**
    * The actual refactoring instance that is used by the RefactoringAction.
    */
-  class RenameScalaIdeRefactoring(start: Int, end: Int, file: ScalaSourceFile) extends ScalaIdeRefactoring("Rename", file, start, end) {
+  class RenameScalaIdeRefactoring(start: Int, end: Int, file: ScalaSourceFile) 
+    extends ScalaIdeRefactoring("Rename", file, start, end) with FullProjectIndex {
       
     var name = ""
       
     def refactoringParameters = name
     
     val refactoring = withCompiler { compiler =>  
-      new Rename with GlobalIndexes with NameValidation { 
+      new Rename with GlobalIndexes with NameValidation with ConsoleTracing { 
         val global = compiler
         
         /* The initial index is empty, it will be filled during the initialization
-         * where we can show a progress bar and let the uer cancel the operation.*/
+         * where we can show a progress bar and let the user cancel the operation.*/
         var index = GlobalIndex(Nil)
       }
     }
@@ -59,114 +60,12 @@ class GlobalRenameAction extends RefactoringAction {
      */
     override def checkInitialConditions(pm: IProgressMonitor): RefactoringStatus = {
 
-      val allProjectSourceFiles = file.project.allSourceFiles.toList
+      val (index, cleanupHandler) = buildFullProjectIndex(pm)
       
-      def initializeDefaultNameFromSelectedSymbol() = {
-        preparationResult.right.foreach { preparationResult =>
-          name = preparationResult.selectedTree.symbol.nameString
-        }
-      }
-      
-      def collectAllScalaSources(files: List[IFile]) = {
-        val allScalaSourceFiles = files flatMap { f =>
-          ScalaSourceFile.createFromPath(f.getFullPath.toString)
-        }
-        
-        allScalaSourceFiles map { ssf => 
-          ssf.withSourceFile { (sourceFile, _) => sourceFile
-          }()
-        }
-      }
-      
-      /**
-       * First loads all the source files into the compiler and then starts
-       * typeckecking them. The method won't block until typechecking is done
-       * but return all the Response objects instead.
-       * 
-       * If the process gets canceled, no more new typechecks will be started.
-       */
-      def mapAllFilesToResponses(files: List[SourceFile], pm: IProgressMonitor) = {
-
-        pm.subTask("Loading source files.")
-
-        val r = new refactoring.global.Response[Unit]
-        refactoring.global.askReload(files, r)
-        r.get
-        
-        files flatMap { f =>
-          if(pm.isCanceled) {
-            None
-          } else {
-            val r = new refactoring.global.Response[refactoring.global.Tree]
-            refactoring.global.askType(f, forceReload = false, r)
-            Some(r)
-          }
-        }        
-      }
-      
-      /**
-       * Waits until all the typechecking has finished. Every 200 ms, it is checked
-       * whether the user has canceled the process.
-       */
-      def typeCheckAll(responses: List[refactoring.global.Response[refactoring.global.Tree]], pm: IProgressMonitor) = {
-        
-        import refactoring.global._
-        
-        def waitForResultOrCancel(r: Response[Tree]) = {
-
-          var result = None: Option[Tree]
-          
-          do {
-            if (pm.isCanceled) r.cancel()
-            else r.get(200) match {
-              case Some(Left(data)) if r.isComplete /*no provisional results*/ => 
-                result = Some(data)
-              case _ => // continue waiting
-            }
-          } while (!r.isComplete && !r.isCancelled)
-            
-          result
-        }
-        
-        responses flatMap { 
-          case r if !pm.isCanceled => 
-            waitForResultOrCancel(r)
-          case r =>
-            None
-        }
-      }
-      
-      initializeDefaultNameFromSelectedSymbol()
-      
-      pm.beginTask("loading files for renaming", 3)
-              
-      // we need to store the already loaded files so that don't
-      // remove them from the presentation compiler later.
-      val previouslyLoadedFiles = refactoring.global.unitOfFile.values map (_.source) toList
-      
-      val files = collectAllScalaSources(allProjectSourceFiles)
-      
-      val responses = mapAllFilesToResponses(files, pm)
-      
-      pm.subTask("typechecking source files")
-      
-      val trees = typeCheckAll(responses, pm)
-      
-      if(!pm.isCanceled) {
-        
-        pm.subTask("creating index for renaming")
-        
-        val cus = trees map refactoring.CompilationUnitIndex.apply
-        
-        refactoring.index = refactoring.GlobalIndex(cus)
-      }
+      refactoring.index = index
       
       // will be called after the refactoring has finished
-      cleanup = { () => 
-        (files filterNot previouslyLoadedFiles.contains) foreach {
-          refactoring.global.removeUnitOf
-        }
-      }
+      cleanup = cleanupHandler
 
       val status = super.checkInitialConditions(pm)
       
@@ -204,6 +103,8 @@ class GlobalRenameAction extends RefactoringAction {
           }
         case _ =>
       }
+      
+      cleanup()
       
       compositeChange
     }

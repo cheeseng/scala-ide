@@ -110,12 +110,7 @@ class OrganizeImportsAction extends RefactoringAction with ActionWithNoWizard {
       def createChanges(scalaSourceFile: ScalaSourceFile, imports: Iterable[TypeNameMatch], pm: IProgressMonitor) = {
         scalaSourceFile.withSourceFile { (sourceFile, compiler) =>
           val refactoring = new AddImportStatement { 
-            val global = compiler 
-            // The editor has not necessarily been saved, so we need to make 
-            // sure the refactoring gets the correct content of the document.
-            override def getContentForFile(file: AbstractFile): Array[Char] = {
-              sourceFile.content
-            }
+            val global = compiler
           }
           refactoring.addImports(scalaSourceFile.file, imports map (_.getFullyQualifiedName))
         }(Nil)

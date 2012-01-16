@@ -789,7 +789,12 @@ class ScalaProject private (val underlying: IProject) extends HasLogger {
    */
   def refreshChangedFiles(files: List[IFile]) {
     // transform to batch source files
-    val abstractfiles= files.map(file => new BatchSourceFile(EclipseResource(file), readFully(file))) 
+    val abstractfiles = files.collect {
+      // When a compilation unit is moved (e.g. using the Move refactoring) between packages, 
+      // an ElementChangedEvent is fired but with the old IFile name. Ignoring the file does
+      // not seem to cause any bad effects later on, so we simply ignore these files -- Mirko
+      case file if file.exists => new BatchSourceFile(EclipseResource(file), readFully(file))
+    }
       
     withPresentationCompiler {compiler =>
       import compiler._

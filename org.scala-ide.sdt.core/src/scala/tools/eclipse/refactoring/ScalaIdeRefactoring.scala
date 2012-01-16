@@ -15,6 +15,7 @@ import scala.tools.eclipse.ScalaPlugin
 import scala.tools.refactoring.common.{InteractiveScalaCompiler, Selections, TreeNotFound}
 import scala.tools.refactoring.MultiStageRefactoring
 import scala.tools.nsc.util.SourceFile
+import scala.tools.refactoring.common.TextChange
 
 /**
  * This is the abstract base class for all the concrete refactoring instances.
@@ -40,7 +41,7 @@ import scala.tools.nsc.util.SourceFile
  * @param getName The displayable name of this refactoring.
  * @param file The file this refactoring started from.
  */
-abstract class ScalaIdeRefactoring(val getName: String, file: ScalaSourceFile, selectionStart: Int, selectionEnd: Int) extends LTKRefactoring {
+abstract class ScalaIdeRefactoring(val getName: String, val file: ScalaSourceFile, selectionStart: Int, selectionEnd: Int) extends LTKRefactoring {
       
   /**
    * Every refactoring subclass needs to provide a specific refactoring instance.
@@ -75,9 +76,18 @@ abstract class ScalaIdeRefactoring(val getName: String, file: ScalaSourceFile, s
     }
   }
   
+  /**
+   * Performs the refactoring and converts the resulting changes to an
+   * Eclipse CompositeChange. Note that NewFileChanges are ignored! At
+   * the moment, there is only one refactoring (Move Class) that creates 
+   * these, which overrides this method.
+   */
   def createChange(pm: IProgressMonitor): CompositeChange = {
+    val changes = performRefactoring() collect {
+      case tc: TextChange => tc
+    }
     new CompositeChange(getName) {
-      scalaChangesToEclipseChanges(performRefactoring()) foreach add
+      scalaChangesToEclipseChanges(changes) foreach add
     }
   }
       
@@ -110,13 +120,13 @@ abstract class ScalaIdeRefactoring(val getName: String, file: ScalaSourceFile, s
    * 
    * @throws Throws a CoreException if the IFile for the corresponding AbstractFile can't be found.
    */
-  private [refactoring] def scalaChangesToEclipseChanges(changes: List[tools.refactoring.common.Change]) = {
+  private [refactoring] def scalaChangesToEclipseChanges(changes: List[tools.refactoring.common.TextChange]) = {
     changes groupBy (_.file) map {
-      case (abstractFile, fileChanges) =>
-        FileUtils.toIFile(abstractFile) map { file =>
+      case (sourceFile, fileChanges) =>
+        FileUtils.toIFile(sourceFile.file) map { file =>
           EditorHelpers.createTextFileChange(file, fileChanges)
         } getOrElse {
-          val msg = "Could not find the corresponding IFile for "+ abstractFile.path
+          val msg = "Could not find the corresponding IFile for "+ sourceFile.file.path
           throw new CoreException(new Status(IStatus.ERROR, ScalaPlugin.plugin.pluginId, 0, msg, null))
         }
     }
@@ -149,7 +159,7 @@ abstract class ScalaIdeRefactoring(val getName: String, file: ScalaSourceFile, s
       case _ => 
         refactoringError = Some("An error occurred, please check the log file")
         Nil
-    }    
+    }
   }
   
   private [refactoring] def withCompiler[T](f: ScalaPresentationCompiler => T) = {
