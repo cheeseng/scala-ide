@@ -68,7 +68,7 @@ class MoveClassAction extends RefactoringAction {
       val status = super.checkInitialConditions(pm)
       
       if(pm.isCanceled) {
-        status.addWarning("Indexing was cancelled, not all references might get adapted.")
+        status.addWarning("Indexing was cancelled, this might lead to undesired results. Please review the changes carefully!")
       }
 
       status

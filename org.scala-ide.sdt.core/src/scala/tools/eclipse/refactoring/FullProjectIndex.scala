@@ -26,11 +26,12 @@ import org.eclipse.jdt.internal.corext.refactoring.nls.changes.CreateFileChange
 import org.eclipse.core.runtime.Path
 import scala.tools.refactoring.MultiStageRefactoring
 import scala.tools.refactoring.analysis.Indexes
+import scala.tools.eclipse.util.HasLogger
 
 /**
  * 
  */
-trait FullProjectIndex {
+trait FullProjectIndex extends HasLogger {
   
   val refactoring: MultiStageRefactoring with InteractiveScalaCompiler with GlobalIndexes    
     
@@ -46,7 +47,7 @@ trait FullProjectIndex {
 
     val allProjectSourceFiles = file.project.allSourceFiles.toList
     
-    def collectAllScalaSources(files: List[IFile]) = {
+    def collectAllScalaSources(files: List[IFile]): List[SourceFile] = {
       val allScalaSourceFiles = files flatMap { f =>
         ScalaSourceFile.createFromPath(f.getFullPath.toString)
       }
@@ -66,7 +67,7 @@ trait FullProjectIndex {
      */
     def mapAllFilesToResponses(files: List[SourceFile], pm: IProgressMonitor) = {
 
-      pm.subTask("Loading source files.")
+      pm.subTask("loading source files")
 
       val r = new refactoring.global.Response[Unit]
       refactoring.global.askReload(files, r)
@@ -77,7 +78,7 @@ trait FullProjectIndex {
           None
         } else {
           val r = new refactoring.global.Response[refactoring.global.Tree]
-          refactoring.global.askType(f, forceReload = false, r)
+          refactoring.global.askType(f, forceReload = false /*we just loaded the files*/, r)
           Some(r)
         }
       }        
@@ -102,7 +103,7 @@ trait FullProjectIndex {
               result = Some(data)
             case _ => // continue waiting
           }
-        } while (!r.isComplete && !r.isCancelled)
+        } while (!r.isComplete && !r.isCancelled && !pm.isCanceled)
           
         result
       }
@@ -117,7 +118,7 @@ trait FullProjectIndex {
           
     pm.beginTask("loading files: ", 3)
             
-    // we need to store the already loaded files so that don't
+    // we need to store the already loaded files so that we don't
     // remove them from the presentation compiler later.
     val previouslyLoadedFiles = refactoring.global.unitOfFile.values map (_.source) toList
     
@@ -136,24 +137,23 @@ trait FullProjectIndex {
       }
     }
     
-    if(!pm.isCanceled) {
+    val cus = if(!pm.isCanceled) {
       
       pm.subTask("creating index")
       
-      val cus = trees map refactoring.CompilationUnitIndex.apply
-      
-      (refactoring.GlobalIndex(cus), cleanup)
-    } else {
-      refactoring.GlobalIndex(Nil) -> cleanup
-    }
-
-/*
-    val status = super.checkInitialConditions(pm)
+      trees flatMap { tree =>
+        try {
+          refactoring.global.ask { () =>
+            Some(refactoring.CompilationUnitIndex(tree))
+          }
+        } catch {
+          case t => 
+            logger.error(t)
+            None
+        }
+      }
+    } else Nil
     
-    if(pm.isCanceled) {
-      status.addWarning("Indexing was cancelled, not all references might get adapted.")
-    }
-
-    status*/
+    (refactoring.GlobalIndex(cus), cleanup)
   }
 }
