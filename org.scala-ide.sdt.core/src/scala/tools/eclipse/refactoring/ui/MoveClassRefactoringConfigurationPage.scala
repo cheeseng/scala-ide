@@ -73,9 +73,9 @@ class MoveClassRefactoringConfigurationPage(
           case project: IJavaProject =>
             project.getProject.equals(resourceToMove.getProject)
           case pkg: IPackageFragmentRoot =>
-            !pkg.isArchive
+            !pkg.isArchive && !pkg.isExternal && pkg.isOpen && !pkg.isReadOnly
           case pkg: IPackageFragment =>
-            !pkg.isDefaultPackage && pkg.getElementName != originatingPackage
+            !pkg.isDefaultPackage
           case _ =>
             false
         }
@@ -117,9 +117,14 @@ class MoveClassRefactoringConfigurationPage(
   private def validatePage {
     val status = new RefactoringStatus
 
-    if(getSelectedPackage.isEmpty) {
-      status.addFatalError("Select a package.")
+    getSelectedPackage match {
+      case None =>
+        status.addFatalError("Select a package.")
+      case Some(pkg) if pkg.getElementName == originatingPackage =>
+        status.addFatalError("Selected element is already in this package.")
+      case _ => 
     }
+    
     
     // warn if the selected impl is a sealed class!
     setPageComplete(status)

@@ -121,12 +121,12 @@ abstract class ScalaIdeRefactoring(val getName: String, val file: ScalaSourceFil
    * @throws Throws a CoreException if the IFile for the corresponding AbstractFile can't be found.
    */
   private [refactoring] def scalaChangesToEclipseChanges(changes: List[tools.refactoring.common.TextChange]) = {
-    changes groupBy (_.file) map {
-      case (sourceFile, fileChanges) =>
-        FileUtils.toIFile(sourceFile.file) map { file =>
+    changes groupBy (_.sourceFile.file) map {
+      case (file, fileChanges) =>
+        FileUtils.toIFile(file) map { file =>
           EditorHelpers.createTextFileChange(file, fileChanges)
         } getOrElse {
-          val msg = "Could not find the corresponding IFile for "+ sourceFile.file.path
+          val msg = "Could not find the corresponding IFile for "+ file.path
           throw new CoreException(new Status(IStatus.ERROR, ScalaPlugin.plugin.pluginId, 0, msg, null))
         }
     }
