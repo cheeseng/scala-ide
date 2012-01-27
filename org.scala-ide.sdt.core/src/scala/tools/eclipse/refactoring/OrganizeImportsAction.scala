@@ -140,7 +140,7 @@ class OrganizeImportsAction extends RefactoringAction with ActionWithNoWizard {
 
       val typeSearchDialog = {
         val labelProvider = new TypeNameMatchLabelProvider(TypeNameMatchLabelProvider.SHOW_FULLYQUALIFIED)
-        new MultiElementListSelectionDialog(shell, labelProvider) {
+        new MultiElementListSelectionDialog(ProgressHelpers.shell, labelProvider) {
           setTitle(ActionMessages.OrganizeImportsAction_selectiondialog_title)
           setMessage(ActionMessages.OrganizeImportsAction_selectiondialog_message)
         }
@@ -203,7 +203,7 @@ class OrganizeImportsAction extends RefactoringAction with ActionWithNoWizard {
           // continue with organizing imports
           runRefactoringInUiJob()
         case missingTypes =>
-          runInProgressDialog { pm =>
+          ProgressHelpers.runInProgressDialogBlockUi { pm =>
             pm.beginTask("Organizing Imports", 4)
             addMissingImportsToFile(missingTypes, file, pm)
             pm.done

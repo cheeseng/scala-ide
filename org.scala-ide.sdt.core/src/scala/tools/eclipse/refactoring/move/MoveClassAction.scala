@@ -16,6 +16,12 @@ import scala.tools.refactoring.common.{TextChange, NewFileChange, ConsoleTracing
 import scala.tools.refactoring.implementations.MoveClass
 
 /**
+ * The Move Class refactoring moves (non-nested) classes, objects and traits between different
+ * packages. In files that contains multiple classes, it's possible to split off a class and
+ * move it to its own file.
+ * 
+ * Using the ScalaMoveParticipant, the refactoring also hooks into other Eclipse move actions,
+ * like for example when a file is moved by drag&drop in the package explorer.
  * 
  */
 class MoveClassAction extends RefactoringAction {
@@ -93,7 +99,7 @@ class MoveClassAction extends RefactoringAction {
         
         newFileChanges match {
           
-          // If there's no new file to create, we obviously need to move the current file.
+          // If there's no new file to create, we move the current file.
           case Nil => 
             add(new MoveResourceChange(file.getResource, target.getCorrespondingResource.asInstanceOf[IFolder]))
 

@@ -28,15 +28,14 @@ import scala.tools.refactoring.MultiStageRefactoring
 import scala.tools.refactoring.analysis.Indexes
 import scala.tools.eclipse.util.HasLogger
 
-/**
- * 
- */
 trait FullProjectIndex extends HasLogger {
   
   val refactoring: MultiStageRefactoring with InteractiveScalaCompiler with GlobalIndexes    
     
   val file: ScalaSourceFile
   
+  lazy val allProjectSourceFiles = file.project.allSourceFiles.toList
+
   /**
    * A cleanup handler, will later be set by the refactoring
    * to remove all loaded compilation units from the compiler.
@@ -44,17 +43,20 @@ trait FullProjectIndex extends HasLogger {
   type CleanupHandler = () => Unit
   
   def buildFullProjectIndex(pm: IProgressMonitor): (refactoring.IndexLookup, CleanupHandler) = {
-
-    val allProjectSourceFiles = file.project.allSourceFiles.toList
     
     def collectAllScalaSources(files: List[IFile]): List[SourceFile] = {
       val allScalaSourceFiles = files flatMap { f =>
-        ScalaSourceFile.createFromPath(f.getFullPath.toString)
+        if(pm.isCanceled)
+          return Nil
+        else 
+          ScalaSourceFile.createFromPath(f.getFullPath.toString)
       }
       
-      allScalaSourceFiles map { ssf => 
-        ssf.withSourceFile { (sourceFile, _) => sourceFile
-        }()
+      allScalaSourceFiles map { ssf =>
+        if(pm.isCanceled)
+          return Nil
+        else
+          ssf.withSourceFile { (sourceFile, _) => sourceFile}()
       }
     }
     
@@ -67,7 +69,7 @@ trait FullProjectIndex extends HasLogger {
      */
     def mapAllFilesToResponses(files: List[SourceFile], pm: IProgressMonitor) = {
 
-      pm.subTask("loading source files")
+      pm.subTask("loading dependent source files")
 
       val r = new refactoring.global.Response[Unit]
       refactoring.global.askReload(files, r)
