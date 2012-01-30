@@ -42,7 +42,7 @@ class GlobalRenameAction extends RefactoringAction {
     def refactoringParameters = name
     
     val refactoring = withCompiler { compiler =>  
-      new Rename with GlobalIndexes with NameValidation with ConsoleTracing { 
+      new Rename with GlobalIndexes with NameValidation { 
         val global = compiler
         
         /* The initial index is empty, it will be filled during the initialization
