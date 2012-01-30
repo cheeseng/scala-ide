@@ -3,38 +3,29 @@ package refactoring
 
 import org.eclipse.core.resources.IFile
 import org.eclipse.core.runtime.IProgressMonitor
-import org.eclipse.ltk.core.refactoring.resource.RenameResourceChange
-import org.eclipse.ltk.core.refactoring.RefactoringStatus
-import scala.tools.eclipse.javaelements.ScalaSourceFile
-import scala.tools.eclipse.refactoring.ui._
-import scala.tools.nsc.util.SourceFile
-import scala.tools.refactoring.analysis.{GlobalIndexes, Indexes, NameValidation}
-import scala.tools.refactoring.common.{ConsoleTracing, InteractiveScalaCompiler, Selections}
-import scala.tools.refactoring.implementations.Rename
-import scala.tools.refactoring.Refactoring
-import scala.tools.refactoring.implementations.MoveClass
-import org.eclipse.ltk.ui.refactoring.resource.MoveResourcesWizard
-import org.eclipse.ltk.ui.refactoring.RefactoringWizardPage
-import org.eclipse.ltk.internal.core.refactoring.resource.MoveResourcesProcessor
-import org.eclipse.core.resources.IContainer
-import org.eclipse.jdt.internal.ui.refactoring.reorg.ReorgUserInputPage
-import org.eclipse.jdt.core.IPackageFragment
-import org.eclipse.ltk.core.refactoring.CompositeChange
-import org.eclipse.ltk.core.refactoring.resource.MoveResourceChange
-import org.eclipse.core.resources.IFolder
-import org.eclipse.jdt.internal.corext.refactoring.nls.changes.CreateFileChange
-import org.eclipse.core.runtime.Path
-import scala.tools.refactoring.MultiStageRefactoring
-import scala.tools.refactoring.analysis.Indexes
-import scala.tools.eclipse.util.HasLogger
 
+import scala.tools.eclipse.javaelements.ScalaSourceFile
+import scala.tools.eclipse.util.HasLogger
+import scala.tools.nsc.util.SourceFile
+import scala.tools.refactoring.analysis.GlobalIndexes
+import scala.tools.refactoring.common.InteractiveScalaCompiler
+import scala.tools.refactoring.MultiStageRefactoring
+
+/**
+ * A trait that can be mixed into refactorings that need an index of the whole 
+ * project (e.g. Global Rename, Move Class).
+ * 
+ * This loads all the files in the project into the presentation compiler, which
+ * takes significant time. Once the Scala IDE has its own index, we should be able
+ * to make this much more efficient than it currently is.
+ */
 trait FullProjectIndex extends HasLogger {
   
   val refactoring: MultiStageRefactoring with InteractiveScalaCompiler with GlobalIndexes    
     
-  val file: ScalaSourceFile
+  val project: ScalaProject
   
-  lazy val allProjectSourceFiles = file.project.allSourceFiles.toList
+  lazy val allProjectSourceFiles = project.allSourceFiles.toList
 
   /**
    * A cleanup handler, will later be set by the refactoring
@@ -42,7 +33,14 @@ trait FullProjectIndex extends HasLogger {
    */
   type CleanupHandler = () => Unit
   
+  /**
+   * Builds an index from all the source files in the current project. The returned 
+   * CleanupHandler needs to be called when the index isn't used anymore, this will
+   * then unload all the originally unloaded files from the presentation compiler.
+   */
   def buildFullProjectIndex(pm: IProgressMonitor): (refactoring.IndexLookup, CleanupHandler) = {
+    
+    import refactoring.global
     
     def collectAllScalaSources(files: List[IFile]): List[SourceFile] = {
       val allScalaSourceFiles = files flatMap { f =>
@@ -71,16 +69,16 @@ trait FullProjectIndex extends HasLogger {
 
       pm.subTask("loading dependent source files")
 
-      val r = new refactoring.global.Response[Unit]
-      refactoring.global.askReload(files, r)
+      val r = new global.Response[Unit]
+      global.askReload(files, r)
       r.get
       
       files flatMap { f =>
         if(pm.isCanceled) {
           None
         } else {
-          val r = new refactoring.global.Response[refactoring.global.Tree]
-          refactoring.global.askType(f, forceReload = false /*we just loaded the files*/, r)
+          val r = new global.Response[global.Tree]
+          global.askType(f, forceReload = false /*we just loaded the files*/, r)
           Some(r)
         }
       }        
@@ -90,13 +88,12 @@ trait FullProjectIndex extends HasLogger {
      * Waits until all the typechecking has finished. Every 200 ms, it is checked
      * whether the user has canceled the process.
      */
-    def typeCheckAll(responses: List[refactoring.global.Response[refactoring.global.Tree]], pm: IProgressMonitor) = {
+    def typeCheckAll(responses: List[global.Response[global.Tree]], pm: IProgressMonitor) = {
       
-      import refactoring.global._
       
-      def waitForResultOrCancel(r: Response[Tree]) = {
+      def waitForResultOrCancel(r: global.Response[global.Tree]) = {
 
-        var result = None: Option[Tree]
+        var result = None: Option[global.Tree]
         
         do {
           if (pm.isCanceled) r.cancel()
@@ -122,7 +119,7 @@ trait FullProjectIndex extends HasLogger {
             
     // we need to store the already loaded files so that we don't
     // remove them from the presentation compiler later.
-    val previouslyLoadedFiles = refactoring.global.unitOfFile.values map (_.source) toList
+    val previouslyLoadedFiles = global.unitOfFile.values map (_.source) toList
     
     val files = collectAllScalaSources(allProjectSourceFiles)
     
@@ -135,7 +132,7 @@ trait FullProjectIndex extends HasLogger {
     // will be called after the refactoring has finished
     val cleanup = { () => 
       (files filterNot previouslyLoadedFiles.contains) foreach {
-        refactoring.global.removeUnitOf
+        global.removeUnitOf
       }
     }
     
@@ -145,7 +142,7 @@ trait FullProjectIndex extends HasLogger {
       
       trees flatMap { tree =>
         try {
-          refactoring.global.ask { () =>
+          global.ask { () =>
             Some(refactoring.CompilationUnitIndex(tree))
           }
         } catch {

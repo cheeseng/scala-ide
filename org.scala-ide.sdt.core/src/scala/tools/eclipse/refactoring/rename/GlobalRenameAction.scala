@@ -35,6 +35,8 @@ class GlobalRenameAction extends RefactoringAction {
   class RenameScalaIdeRefactoring(start: Int, end: Int, file: ScalaSourceFile) 
     extends ScalaIdeRefactoring("Rename", file, start, end) with FullProjectIndex {
       
+    val project = file.project
+    
     var name = ""
       
     def refactoringParameters = name

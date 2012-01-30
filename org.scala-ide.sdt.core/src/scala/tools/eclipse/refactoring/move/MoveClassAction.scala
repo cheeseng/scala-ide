@@ -31,6 +31,8 @@ class MoveClassAction extends RefactoringAction {
   class MoveClassScalaIdeRefactoring(start: Int, end: Int, file: ScalaSourceFile) 
       extends ScalaIdeRefactoring("Move Class/Trait/Object", file, start, end) with FullProjectIndex {
       
+    val project = file.project
+    
     var moveSingleImpl: refactoring.PreparationResult = None
     
     var target: IPackageFragment = null
